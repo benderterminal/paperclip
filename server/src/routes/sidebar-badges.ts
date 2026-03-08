@@ -37,7 +37,11 @@ export function sidebarBadgeRoutes(db: Db) {
       : 0;
 
     let boardInReviewCount = 0;
-    if (req.actor.type === "board" && req.actor.userId) {
+    const boardUserId =
+      req.actor.type === "board"
+        ? req.actor.userId ?? (req.actor.source === "local_implicit" ? "local-board" : undefined)
+        : undefined;
+    if (req.actor.type === "board" && boardUserId) {
       boardInReviewCount = await db
         .select({ count: sql<number>`count(*)` })
         .from(issues)
@@ -46,7 +50,7 @@ export function sidebarBadgeRoutes(db: Db) {
             eq(issues.companyId, companyId),
             isNull(issues.hiddenAt),
             eq(issues.status, "in_review"),
-            eq(issues.assigneeUserId, req.actor.userId),
+            eq(issues.assigneeUserId, boardUserId),
           ),
         )
         .then((rows) => Number(rows[0]?.count ?? 0));
