@@ -152,6 +152,12 @@ export function Costs() {
                     : "Unlimited budget"}
                 </span>
               </p>
+              {data.summary.nonBillableMeteredRunCount > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Non-billable metered usage: {data.summary.nonBillableMeteredRunCount} runs
+                  ({formatTokens(data.summary.nonBillableMeteredInputTokens)} in / {formatTokens(data.summary.nonBillableMeteredOutputTokens)} out tok)
+                </p>
+              )}
               {data.summary.budgetCents > 0 && (
                 <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
                   <div
@@ -197,12 +203,12 @@ export function Costs() {
                           <span className="text-xs text-muted-foreground block">
                             in {formatTokens(row.inputTokens)} / out {formatTokens(row.outputTokens)} tok
                           </span>
-                          {(row.apiRunCount > 0 || row.subscriptionRunCount > 0) && (
+                          {(row.apiRunCount > 0 || row.nonBillableMeteredRunCount > 0) && (
                             <span className="text-xs text-muted-foreground block">
-                              {row.apiRunCount > 0 ? `api runs: ${row.apiRunCount}` : null}
-                              {row.apiRunCount > 0 && row.subscriptionRunCount > 0 ? " | " : null}
-                              {row.subscriptionRunCount > 0
-                                ? `subscription runs: ${row.subscriptionRunCount} (${formatTokens(row.subscriptionInputTokens)} in / ${formatTokens(row.subscriptionOutputTokens)} out tok)`
+                              {row.apiRunCount > 0 ? `billable api runs: ${row.apiRunCount}` : null}
+                              {row.apiRunCount > 0 && row.nonBillableMeteredRunCount > 0 ? " | " : null}
+                              {row.nonBillableMeteredRunCount > 0
+                                ? `non-billable metered runs: ${row.nonBillableMeteredRunCount} (${formatTokens(row.nonBillableMeteredInputTokens)} in / ${formatTokens(row.nonBillableMeteredOutputTokens)} out tok)`
                                 : null}
                             </span>
                           )}
@@ -224,12 +230,19 @@ export function Costs() {
                     {data.byProject.map((row) => (
                       <div
                         key={row.projectId ?? "na"}
-                        className="flex items-center justify-between text-sm"
+                        className="flex items-start justify-between text-sm"
                       >
                         <span className="truncate">
                           {row.projectName ?? row.projectId ?? "Unattributed"}
                         </span>
-                        <span className="font-medium">{formatCents(row.costCents)}</span>
+                        <span className="font-medium text-right">
+                          {formatCents(row.costCents)}
+                          {row.nonBillableMeteredRunCount > 0 && (
+                            <span className="block text-xs font-normal text-muted-foreground">
+                              non-billable: {row.nonBillableMeteredRunCount} runs
+                            </span>
+                          )}
+                        </span>
                       </div>
                     ))}
                   </div>

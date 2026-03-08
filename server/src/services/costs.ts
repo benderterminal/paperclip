@@ -10,6 +10,35 @@ export interface CostDateRange {
 
 const NON_BILLABLE_RUN_EXPR = sql`coalesce((${heartbeatRuns.usageJson} ->> 'billingType'), 'unknown') in ('subscription', 'oauth')`;
 
+type AgentCostRollupRow = {
+  agentId: string;
+  agentName: string | null;
+  agentStatus: string | null;
+  costCents: number;
+  inputTokens: number;
+  outputTokens: number;
+};
+
+type AgentRunUsageRow = {
+  apiRunCount: number;
+  nonBillableMeteredRunCount: number;
+  nonBillableMeteredInputTokens: number;
+  nonBillableMeteredOutputTokens: number;
+};
+
+export function mergeAgentCostAndUsageRollups(
+  costRow: AgentCostRollupRow,
+  runRow?: Partial<AgentRunUsageRow>,
+) {
+  return {
+    ...costRow,
+    apiRunCount: runRow?.apiRunCount ?? 0,
+    nonBillableMeteredRunCount: runRow?.nonBillableMeteredRunCount ?? 0,
+    nonBillableMeteredInputTokens: runRow?.nonBillableMeteredInputTokens ?? 0,
+    nonBillableMeteredOutputTokens: runRow?.nonBillableMeteredOutputTokens ?? 0,
+  };
+}
+
 export function costService(db: Db) {
   return {
     createEvent: async (companyId: string, data: Omit<typeof costEvents.$inferInsert, "companyId">) => {
@@ -89,6 +118,23 @@ export function costService(db: Db) {
         .where(and(...conditions));
 
       const spendCents = Number(total);
+
+      const runConditions: ReturnType<typeof eq>[] = [eq(heartbeatRuns.companyId, companyId)];
+      if (range?.from) runConditions.push(gte(heartbeatRuns.finishedAt, range.from));
+      if (range?.to) runConditions.push(lte(heartbeatRuns.finishedAt, range.to));
+
+      const [metered] = await db
+        .select({
+          nonBillableMeteredRunCount:
+            sql<number>`coalesce(sum(case when ${NON_BILLABLE_RUN_EXPR} then 1 else 0 end), 0)::int`,
+          nonBillableMeteredInputTokens:
+            sql<number>`coalesce(sum(case when ${NON_BILLABLE_RUN_EXPR} then coalesce((${heartbeatRuns.usageJson} ->> 'inputTokens')::int, 0) else 0 end), 0)::int`,
+          nonBillableMeteredOutputTokens:
+            sql<number>`coalesce(sum(case when ${NON_BILLABLE_RUN_EXPR} then coalesce((${heartbeatRuns.usageJson} ->> 'outputTokens')::int, 0) else 0 end), 0)::int`,
+        })
+        .from(heartbeatRuns)
+        .where(and(...runConditions));
+
       const utilization =
         company.budgetMonthlyCents > 0
           ? (spendCents / company.budgetMonthlyCents) * 100
@@ -99,6 +145,9 @@ export function costService(db: Db) {
         spendCents,
         budgetCents: company.budgetMonthlyCents,
         utilizationPercent: Number(utilization.toFixed(2)),
+        nonBillableMeteredRunCount: metered?.nonBillableMeteredRunCount ?? 0,
+        nonBillableMeteredInputTokens: metered?.nonBillableMeteredInputTokens ?? 0,
+        nonBillableMeteredOutputTokens: metered?.nonBillableMeteredOutputTokens ?? 0,
       };
     },
 
@@ -131,11 +180,11 @@ export function costService(db: Db) {
           agentId: heartbeatRuns.agentId,
           apiRunCount:
             sql<number>`coalesce(sum(case when coalesce((${heartbeatRuns.usageJson} ->> 'billingType'), 'unknown') = 'api' then 1 else 0 end), 0)::int`,
-          subscriptionRunCount:
+          nonBillableMeteredRunCount:
             sql<number>`coalesce(sum(case when ${NON_BILLABLE_RUN_EXPR} then 1 else 0 end), 0)::int`,
-          subscriptionInputTokens:
+          nonBillableMeteredInputTokens:
             sql<number>`coalesce(sum(case when ${NON_BILLABLE_RUN_EXPR} then coalesce((${heartbeatRuns.usageJson} ->> 'inputTokens')::int, 0) else 0 end), 0)::int`,
-          subscriptionOutputTokens:
+          nonBillableMeteredOutputTokens:
             sql<number>`coalesce(sum(case when ${NON_BILLABLE_RUN_EXPR} then coalesce((${heartbeatRuns.usageJson} ->> 'outputTokens')::int, 0) else 0 end), 0)::int`,
         })
         .from(heartbeatRuns)
@@ -143,16 +192,7 @@ export function costService(db: Db) {
         .groupBy(heartbeatRuns.agentId);
 
       const runRowsByAgent = new Map(runRows.map((row) => [row.agentId, row]));
-      return costRows.map((row) => {
-        const runRow = runRowsByAgent.get(row.agentId);
-        return {
-          ...row,
-          apiRunCount: runRow?.apiRunCount ?? 0,
-          subscriptionRunCount: runRow?.subscriptionRunCount ?? 0,
-          subscriptionInputTokens: runRow?.subscriptionInputTokens ?? 0,
-          subscriptionOutputTokens: runRow?.subscriptionOutputTokens ?? 0,
-        };
-      });
+      return costRows.map((row) => mergeAgentCostAndUsageRollups(row, runRowsByAgent.get(row.agentId)));
     },
 
     byProject: async (companyId: string, range?: CostDateRange) => {
@@ -194,6 +234,12 @@ export function costService(db: Db) {
           costCents: costCentsExpr,
           inputTokens: sql<number>`coalesce(sum(coalesce((${heartbeatRuns.usageJson} ->> 'inputTokens')::int, 0)), 0)::int`,
           outputTokens: sql<number>`coalesce(sum(coalesce((${heartbeatRuns.usageJson} ->> 'outputTokens')::int, 0)), 0)::int`,
+          nonBillableMeteredRunCount:
+            sql<number>`coalesce(sum(case when ${NON_BILLABLE_RUN_EXPR} then 1 else 0 end), 0)::int`,
+          nonBillableMeteredInputTokens:
+            sql<number>`coalesce(sum(case when ${NON_BILLABLE_RUN_EXPR} then coalesce((${heartbeatRuns.usageJson} ->> 'inputTokens')::int, 0) else 0 end), 0)::int`,
+          nonBillableMeteredOutputTokens:
+            sql<number>`coalesce(sum(case when ${NON_BILLABLE_RUN_EXPR} then coalesce((${heartbeatRuns.usageJson} ->> 'outputTokens')::int, 0) else 0 end), 0)::int`,
         })
         .from(runProjectLinks)
         .innerJoin(heartbeatRuns, eq(runProjectLinks.runId, heartbeatRuns.id))

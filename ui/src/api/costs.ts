@@ -7,6 +7,9 @@ export interface CostByProject {
   costCents: number;
   inputTokens: number;
   outputTokens: number;
+  nonBillableMeteredRunCount: number;
+  nonBillableMeteredInputTokens: number;
+  nonBillableMeteredOutputTokens: number;
 }
 
 function dateParams(from?: string, to?: string): string {
