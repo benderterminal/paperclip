@@ -1017,7 +1017,7 @@ function CostsSection({
                         : "-"
                       }
                       {isNonBillable
-                        ? <span className="ml-2 text-[10px] text-muted-foreground">Non-billable (subscription)</span>
+                        ? <span className="ml-2 text-[10px] text-muted-foreground">Non-billable ({billingType === "oauth" ? "OAuth" : "subscription"})</span>
                         : null}
                     </td>
                   </tr>

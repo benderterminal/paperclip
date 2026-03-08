@@ -8,7 +8,9 @@ export interface CostDateRange {
   to?: Date;
 }
 
-const NON_BILLABLE_RUN_EXPR = sql`coalesce((${heartbeatRuns.usageJson} ->> 'billingType'), 'unknown') in ('subscription', 'oauth')`;
+const NORMALIZED_BILLING_TYPE_EXPR = sql`lower(trim(coalesce((${heartbeatRuns.usageJson} ->> 'billingType'), 'unknown')))`;
+const NON_BILLABLE_RUN_EXPR = sql`${NORMALIZED_BILLING_TYPE_EXPR} in ('subscription', 'oauth')`;
+const API_BILLING_TYPE_EXPR = sql`${NORMALIZED_BILLING_TYPE_EXPR} = 'api'`;
 
 type AgentCostRollupRow = {
   agentId: string;
@@ -179,7 +181,7 @@ export function costService(db: Db) {
         .select({
           agentId: heartbeatRuns.agentId,
           apiRunCount:
-            sql<number>`coalesce(sum(case when coalesce((${heartbeatRuns.usageJson} ->> 'billingType'), 'unknown') = 'api' then 1 else 0 end), 0)::int`,
+            sql<number>`coalesce(sum(case when ${API_BILLING_TYPE_EXPR} then 1 else 0 end), 0)::int`,
           nonBillableMeteredRunCount:
             sql<number>`coalesce(sum(case when ${NON_BILLABLE_RUN_EXPR} then 1 else 0 end), 0)::int`,
           nonBillableMeteredInputTokens:
