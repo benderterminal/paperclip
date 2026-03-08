@@ -1014,6 +1014,10 @@ function CostsSection({
                         ? `$${Number(u.cost_usd ?? u.total_cost_usd ?? 0).toFixed(4)}`
                         : "-"
                       }
+                      {String(u.billingType ?? u.billing_type ?? "").toLowerCase() === "subscription" ||
+                      String(u.billingType ?? u.billing_type ?? "").toLowerCase() === "oauth"
+                        ? <span className="ml-2 text-[10px] text-muted-foreground">Non-billable (subscription)</span>
+                        : null}
                     </td>
                   </tr>
                 );

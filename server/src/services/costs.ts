@@ -130,11 +130,11 @@ export function costService(db: Db) {
           apiRunCount:
             sql<number>`coalesce(sum(case when coalesce((${heartbeatRuns.usageJson} ->> 'billingType'), 'unknown') = 'api' then 1 else 0 end), 0)::int`,
           subscriptionRunCount:
-            sql<number>`coalesce(sum(case when coalesce((${heartbeatRuns.usageJson} ->> 'billingType'), 'unknown') = 'subscription' then 1 else 0 end), 0)::int`,
+            sql<number>`coalesce(sum(case when coalesce((${heartbeatRuns.usageJson} ->> 'billingType'), 'unknown') in ('subscription', 'oauth') then 1 else 0 end), 0)::int`,
           subscriptionInputTokens:
-            sql<number>`coalesce(sum(case when coalesce((${heartbeatRuns.usageJson} ->> 'billingType'), 'unknown') = 'subscription' then coalesce((${heartbeatRuns.usageJson} ->> 'inputTokens')::int, 0) else 0 end), 0)::int`,
+            sql<number>`coalesce(sum(case when coalesce((${heartbeatRuns.usageJson} ->> 'billingType'), 'unknown') in ('subscription', 'oauth') then coalesce((${heartbeatRuns.usageJson} ->> 'inputTokens')::int, 0) else 0 end), 0)::int`,
           subscriptionOutputTokens:
-            sql<number>`coalesce(sum(case when coalesce((${heartbeatRuns.usageJson} ->> 'billingType'), 'unknown') = 'subscription' then coalesce((${heartbeatRuns.usageJson} ->> 'outputTokens')::int, 0) else 0 end), 0)::int`,
+            sql<number>`coalesce(sum(case when coalesce((${heartbeatRuns.usageJson} ->> 'billingType'), 'unknown') in ('subscription', 'oauth') then coalesce((${heartbeatRuns.usageJson} ->> 'outputTokens')::int, 0) else 0 end), 0)::int`,
         })
         .from(heartbeatRuns)
         .where(and(...runConditions))
@@ -183,7 +183,7 @@ export function costService(db: Db) {
       if (range?.from) conditions.push(gte(heartbeatRuns.finishedAt, range.from));
       if (range?.to) conditions.push(lte(heartbeatRuns.finishedAt, range.to));
 
-      const costCentsExpr = sql<number>`coalesce(sum(round(coalesce((${heartbeatRuns.usageJson} ->> 'costUsd')::numeric, 0) * 100)), 0)::int`;
+      const costCentsExpr = sql<number>`coalesce(sum(case when coalesce((${heartbeatRuns.usageJson} ->> 'billingType'), 'unknown') in ('subscription', 'oauth') then 0 else round(coalesce((${heartbeatRuns.usageJson} ->> 'costUsd')::numeric, 0) * 100) end), 0)::int`;
 
       return db
         .select({
