@@ -35,6 +35,19 @@ function appendExcerpt(prev: string, chunk: string) {
   return appendWithCap(prev, chunk, MAX_EXCERPT_BYTES);
 }
 
+export function isNonBillableBillingType(billingType: string | null | undefined): boolean {
+  const normalizedBillingType = (billingType ?? "").trim().toLowerCase();
+  return normalizedBillingType === "subscription" || normalizedBillingType === "oauth";
+}
+
+export function computeRunBillableCostCents(input: {
+  costUsd: number | null | undefined;
+  billingType: string | null | undefined;
+}): number {
+  if (isNonBillableBillingType(input.billingType)) return 0;
+  return Math.max(0, Math.round((input.costUsd ?? 0) * 100));
+}
+
 function normalizeMaxConcurrentRuns(value: unknown) {
   const parsed = Math.floor(asNumber(value, HEARTBEAT_MAX_CONCURRENT_RUNS_DEFAULT));
   if (!Number.isFinite(parsed)) return HEARTBEAT_MAX_CONCURRENT_RUNS_DEFAULT;
@@ -957,7 +970,10 @@ export function heartbeatService(db: Db) {
     const inputTokens = usage?.inputTokens ?? 0;
     const outputTokens = usage?.outputTokens ?? 0;
     const cachedInputTokens = usage?.cachedInputTokens ?? 0;
-    const additionalCostCents = Math.max(0, Math.round((result.costUsd ?? 0) * 100));
+    const additionalCostCents = computeRunBillableCostCents({
+      costUsd: result.costUsd,
+      billingType: result.billingType,
+    });
     const hasTokenUsage = inputTokens > 0 || outputTokens > 0 || cachedInputTokens > 0;
 
     await db

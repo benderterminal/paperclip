@@ -17,20 +17,27 @@ export interface CostEvent {
 
 export interface CostSummary {
   companyId: string;
+  // billable spend bucket (counts toward budget)
   spendCents: number;
   budgetCents: number;
   utilizationPercent: number;
+  // non-billable metered usage bucket (subscription/oauth runs)
+  nonBillableMeteredRunCount: number;
+  nonBillableMeteredInputTokens: number;
+  nonBillableMeteredOutputTokens: number;
 }
 
 export interface CostByAgent {
   agentId: string;
   agentName: string | null;
   agentStatus: string | null;
+  // billable spend bucket (counts toward budget)
   costCents: number;
   inputTokens: number;
   outputTokens: number;
   apiRunCount: number;
-  subscriptionRunCount: number;
-  subscriptionInputTokens: number;
-  subscriptionOutputTokens: number;
+  // non-billable metered usage bucket (subscription/oauth runs)
+  nonBillableMeteredRunCount: number;
+  nonBillableMeteredInputTokens: number;
+  nonBillableMeteredOutputTokens: number;
 }

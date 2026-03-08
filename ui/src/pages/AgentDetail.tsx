@@ -1003,6 +1003,8 @@ function CostsSection({
             <tbody>
               {runsWithCost.slice(0, 10).map((run) => {
                 const u = run.usageJson as Record<string, unknown>;
+                const billingType = String(u.billingType ?? u.billing_type ?? "").trim().toLowerCase();
+                const isNonBillable = billingType === "subscription" || billingType === "oauth";
                 return (
                   <tr key={run.id} className="border-b border-border last:border-b-0">
                     <td className="px-3 py-2">{formatDate(run.createdAt)}</td>
@@ -1014,6 +1016,9 @@ function CostsSection({
                         ? `$${Number(u.cost_usd ?? u.total_cost_usd ?? 0).toFixed(4)}`
                         : "-"
                       }
+                      {isNonBillable
+                        ? <span className="ml-2 text-[10px] text-muted-foreground">Non-billable (subscription)</span>
+                        : null}
                     </td>
                   </tr>
                 );

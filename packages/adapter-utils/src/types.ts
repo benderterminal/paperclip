@@ -30,7 +30,7 @@ export interface UsageSummary {
   cachedInputTokens?: number;
 }
 
-export type AdapterBillingType = "api" | "subscription" | "unknown";
+export type AdapterBillingType = "api" | "subscription" | "oauth" | "unknown";
 
 export interface AdapterExecutionResult {
   exitCode: number | null;
