@@ -46,6 +46,9 @@ export function companyRoutes(db: Db) {
   });
 
   const setCompanyHeartbeatModeSchema = z.object({ enabled: z.boolean() });
+  const restoreCompanyHeartbeatModeSchema = z.object({
+    clearSnapshot: z.boolean().optional().default(true),
+  });
 
   // Common malformed path when companyId is empty in "/api/companies/{companyId}/issues".
   router.get("/issues", (_req, res) => {
@@ -80,6 +83,14 @@ export function companyRoutes(db: Db) {
       if (!heartbeat || typeof heartbeat !== "object") return false;
       return heartbeat.enabled !== false && Number(heartbeat.intervalSec ?? 0) > 0;
     }).length;
+    const snapshotAgents = companyAgents.filter((agent) => {
+      const heartbeat =
+        (agent.runtimeConfig && typeof agent.runtimeConfig === "object"
+          ? (agent.runtimeConfig as Record<string, unknown>).heartbeat
+          : null) as Record<string, unknown> | null;
+      if (!heartbeat || typeof heartbeat !== "object") return false;
+      return "modeSnapshotEnabled" in heartbeat;
+    }).length;
     const disabledAgents = totalAgents - enabledAgents;
     const mode = enabledAgents === totalAgents ? "enabled" : disabledAgents === totalAgents ? "disabled" : "mixed";
     res.json({
@@ -88,6 +99,8 @@ export function companyRoutes(db: Db) {
       totalAgents,
       enabledAgents,
       disabledAgents,
+      snapshotAvailable: snapshotAgents > 0,
+      snapshotAgents,
     });
   });
 
@@ -111,8 +124,11 @@ export function companyRoutes(db: Db) {
 
         const currentInterval = Number(heartbeat.intervalSec ?? 0);
         const previousInterval = Number(heartbeat.previousIntervalSec ?? 0);
+        const currentlyEnabled = heartbeat.enabled !== false && currentInterval > 0;
 
         if (!enabled) {
+          heartbeat.modeSnapshotEnabled = currentlyEnabled;
+          heartbeat.modeSnapshotIntervalSec = currentInterval > 0 ? currentInterval : 0;
           heartbeat.previousIntervalSec = currentInterval > 0 ? currentInterval : previousInterval > 0 ? previousInterval : 10800;
           heartbeat.enabled = false;
           heartbeat.intervalSec = 0;
@@ -143,6 +159,65 @@ export function companyRoutes(db: Db) {
       enabled,
       updatedAgents: updates.filter(Boolean).length,
       totalAgents: companyAgents.length,
+    });
+  });
+
+  router.post("/:companyId/heartbeat-restore", validate(restoreCompanyHeartbeatModeSchema), async (req, res) => {
+    assertBoard(req);
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const { clearSnapshot = true } = req.body as { clearSnapshot?: boolean };
+
+    const companyAgents = await agents.list(companyId);
+    const updates = await Promise.all(
+      companyAgents.map(async (agent) => {
+        const runtime =
+          (agent.runtimeConfig && typeof agent.runtimeConfig === "object"
+            ? { ...(agent.runtimeConfig as Record<string, unknown>) }
+            : {}) as Record<string, unknown>;
+        const heartbeat =
+          (runtime.heartbeat && typeof runtime.heartbeat === "object"
+            ? { ...(runtime.heartbeat as Record<string, unknown>) }
+            : {}) as Record<string, unknown>;
+
+        if (!("modeSnapshotEnabled" in heartbeat)) return null;
+
+        const snapshotEnabled = Boolean(heartbeat.modeSnapshotEnabled);
+        const snapshotInterval = Number(heartbeat.modeSnapshotIntervalSec ?? 0);
+
+        heartbeat.enabled = snapshotEnabled;
+        heartbeat.intervalSec = snapshotEnabled ? (snapshotInterval > 0 ? snapshotInterval : 10800) : 0;
+
+        if (clearSnapshot) {
+          delete heartbeat.modeSnapshotEnabled;
+          delete heartbeat.modeSnapshotIntervalSec;
+        }
+
+        runtime.heartbeat = heartbeat;
+        return agents.update(agent.id, { runtimeConfig: runtime });
+      }),
+    );
+
+    const restoredAgents = updates.filter(Boolean).length;
+
+    await logActivity(db, {
+      companyId,
+      actorType: "user",
+      actorId: req.actor.userId ?? "board",
+      action: "company.heartbeat_mode_restored",
+      entityType: "company",
+      entityId: companyId,
+      details: {
+        restoredAgents,
+        clearSnapshot,
+      },
+    });
+
+    res.json({
+      restoredAgents,
+      totalAgents: companyAgents.length,
+      clearSnapshot,
+      updatedAgents: restoredAgents,
     });
   });
 

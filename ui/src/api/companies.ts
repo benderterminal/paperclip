@@ -16,6 +16,8 @@ export type CompanyHeartbeatMode = {
   totalAgents: number;
   enabledAgents: number;
   disabledAgents: number;
+  snapshotAvailable: boolean;
+  snapshotAgents: number;
 };
 
 export const companiesApi = {
@@ -47,5 +49,10 @@ export const companiesApi = {
     api.post<{ enabled: boolean; updatedAgents: number; totalAgents: number }>(
       `/companies/${companyId}/heartbeat-enabled`,
       { enabled },
+    ),
+  restoreHeartbeatMode: (companyId: string, clearSnapshot = true) =>
+    api.post<{ restoredAgents: number; totalAgents: number; clearSnapshot: boolean; updatedAgents: number }>(
+      `/companies/${companyId}/heartbeat-restore`,
+      { clearSnapshot },
     ),
 };

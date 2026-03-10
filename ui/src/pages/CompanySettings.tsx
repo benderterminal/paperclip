@@ -90,6 +90,15 @@ export function CompanySettings() {
     },
   });
 
+  const heartbeatRestoreMutation = useMutation({
+    mutationFn: () => companiesApi.restoreHeartbeatMode(selectedCompanyId!, true),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["company-heartbeat-mode", selectedCompanyId] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(selectedCompanyId!) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.heartbeats(selectedCompanyId!) });
+    },
+  });
+
   const inviteMutation = useMutation({
     mutationFn: () =>
       accessApi.createOpenClawInvitePrompt(selectedCompanyId!),
@@ -339,14 +348,34 @@ export function CompanySettings() {
               Mixed state detected ({heartbeatMode.enabledAgents}/{heartbeatMode.totalAgents} enabled). Toggle to apply one mode to all agents.
             </p>
           )}
+          {heartbeatMode?.snapshotAvailable && (
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-muted-foreground">
+                Previous per-agent heartbeat state saved for {heartbeatMode.snapshotAgents} agent(s).
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => heartbeatRestoreMutation.mutate()}
+                disabled={heartbeatRestoreMutation.isPending}
+              >
+                {heartbeatRestoreMutation.isPending ? "Restoring..." : "Restore previous"}
+              </Button>
+            </div>
+          )}
           {heartbeatModeMutation.isPending && (
             <p className="text-xs text-muted-foreground">Updating heartbeat mode...</p>
           )}
-          {heartbeatModeMutation.isError && (
+          {heartbeatRestoreMutation.isSuccess && (
+            <p className="text-xs text-muted-foreground">Previous heartbeat state restored.</p>
+          )}
+          {(heartbeatModeMutation.isError || heartbeatRestoreMutation.isError) && (
             <p className="text-xs text-destructive">
-              {heartbeatModeMutation.error instanceof Error
+              {(heartbeatModeMutation.error instanceof Error
                 ? heartbeatModeMutation.error.message
-                : "Failed to update heartbeat mode"}
+                : heartbeatRestoreMutation.error instanceof Error
+                  ? heartbeatRestoreMutation.error.message
+                  : "Failed to update heartbeat mode")}
             </p>
           )}
         </div>
