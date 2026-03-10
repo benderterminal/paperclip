@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { z } from "zod";
 import type { Db } from "@paperclipai/db";
 import {
   companyPortabilityExportSchema,
@@ -9,7 +10,7 @@ import {
 } from "@paperclipai/shared";
 import { forbidden } from "../errors.js";
 import { validate } from "../middleware/validate.js";
-import { accessService, companyPortabilityService, companyService, logActivity } from "../services/index.js";
+import { accessService, agentService, companyPortabilityService, companyService, logActivity } from "../services/index.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 
 export function companyRoutes(db: Db) {
@@ -17,6 +18,7 @@ export function companyRoutes(db: Db) {
   const svc = companyService(db);
   const portability = companyPortabilityService(db);
   const access = accessService(db);
+  const agents = agentService(db);
 
   router.get("/", async (req, res) => {
     assertBoard(req);
@@ -43,6 +45,8 @@ export function companyRoutes(db: Db) {
     res.json(filtered);
   });
 
+  const setCompanyHeartbeatModeSchema = z.object({ enabled: z.boolean() });
+
   // Common malformed path when companyId is empty in "/api/companies/{companyId}/issues".
   router.get("/issues", (_req, res) => {
     res.status(400).json({
@@ -60,6 +64,86 @@ export function companyRoutes(db: Db) {
       return;
     }
     res.json(company);
+  });
+
+  router.get("/:companyId/heartbeat-enabled", async (req, res) => {
+    assertBoard(req);
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const companyAgents = await agents.list(companyId);
+    const totalAgents = companyAgents.length;
+    const enabledAgents = companyAgents.filter((agent) => {
+      const heartbeat =
+        (agent.runtimeConfig && typeof agent.runtimeConfig === "object"
+          ? (agent.runtimeConfig as Record<string, unknown>).heartbeat
+          : null) as Record<string, unknown> | null;
+      if (!heartbeat || typeof heartbeat !== "object") return false;
+      return heartbeat.enabled !== false && Number(heartbeat.intervalSec ?? 0) > 0;
+    }).length;
+    const disabledAgents = totalAgents - enabledAgents;
+    const mode = enabledAgents === totalAgents ? "enabled" : disabledAgents === totalAgents ? "disabled" : "mixed";
+    res.json({
+      mode,
+      enabled: mode === "enabled",
+      totalAgents,
+      enabledAgents,
+      disabledAgents,
+    });
+  });
+
+  router.post("/:companyId/heartbeat-enabled", validate(setCompanyHeartbeatModeSchema), async (req, res) => {
+    assertBoard(req);
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const { enabled } = req.body as { enabled: boolean };
+
+    const companyAgents = await agents.list(companyId);
+    const updates = await Promise.all(
+      companyAgents.map(async (agent) => {
+        const runtime =
+          (agent.runtimeConfig && typeof agent.runtimeConfig === "object"
+            ? { ...(agent.runtimeConfig as Record<string, unknown>) }
+            : {}) as Record<string, unknown>;
+        const heartbeat =
+          (runtime.heartbeat && typeof runtime.heartbeat === "object"
+            ? { ...(runtime.heartbeat as Record<string, unknown>) }
+            : {}) as Record<string, unknown>;
+
+        const currentInterval = Number(heartbeat.intervalSec ?? 0);
+        const previousInterval = Number(heartbeat.previousIntervalSec ?? 0);
+
+        if (!enabled) {
+          heartbeat.previousIntervalSec = currentInterval > 0 ? currentInterval : previousInterval > 0 ? previousInterval : 10800;
+          heartbeat.enabled = false;
+          heartbeat.intervalSec = 0;
+        } else {
+          heartbeat.enabled = true;
+          heartbeat.intervalSec = previousInterval > 0 ? previousInterval : currentInterval > 0 ? currentInterval : 10800;
+        }
+
+        runtime.heartbeat = heartbeat;
+        return agents.update(agent.id, { runtimeConfig: runtime });
+      }),
+    );
+
+    await logActivity(db, {
+      companyId,
+      actorType: "user",
+      actorId: req.actor.userId ?? "board",
+      action: "company.heartbeat_mode_updated",
+      entityType: "company",
+      entityId: companyId,
+      details: {
+        enabled,
+        updatedAgents: updates.filter(Boolean).length,
+      },
+    });
+
+    res.json({
+      enabled,
+      updatedAgents: updates.filter(Boolean).length,
+      totalAgents: companyAgents.length,
+    });
   });
 
   router.post("/:companyId/export", validate(companyPortabilityExportSchema), async (req, res) => {

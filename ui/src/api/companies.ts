@@ -10,6 +10,14 @@ import { api } from "./client";
 
 export type CompanyStats = Record<string, { agentCount: number; issueCount: number }>;
 
+export type CompanyHeartbeatMode = {
+  mode: "enabled" | "disabled" | "mixed";
+  enabled: boolean;
+  totalAgents: number;
+  enabledAgents: number;
+  disabledAgents: number;
+};
+
 export const companiesApi = {
   list: () => api.get<Company[]>("/companies"),
   get: (companyId: string) => api.get<Company>(`/companies/${companyId}`),
@@ -33,4 +41,11 @@ export const companiesApi = {
     api.post<CompanyPortabilityPreviewResult>("/companies/import/preview", data),
   importBundle: (data: CompanyPortabilityImportRequest) =>
     api.post<CompanyPortabilityImportResult>("/companies/import", data),
+  getHeartbeatMode: (companyId: string) =>
+    api.get<CompanyHeartbeatMode>(`/companies/${companyId}/heartbeat-enabled`),
+  setHeartbeatMode: (companyId: string, enabled: boolean) =>
+    api.post<{ enabled: boolean; updatedAgents: number; totalAgents: number }>(
+      `/companies/${companyId}/heartbeat-enabled`,
+      { enabled },
+    ),
 };

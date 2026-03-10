@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { companiesApi } from "../api/companies";
@@ -73,6 +73,21 @@ export function CompanySettings() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
     }
+  });
+
+  const { data: heartbeatMode } = useQuery({
+    enabled: !!selectedCompanyId,
+    queryKey: ["company-heartbeat-mode", selectedCompanyId],
+    queryFn: () => companiesApi.getHeartbeatMode(selectedCompanyId!),
+  });
+
+  const heartbeatModeMutation = useMutation({
+    mutationFn: (enabled: boolean) => companiesApi.setHeartbeatMode(selectedCompanyId!, enabled),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["company-heartbeat-mode", selectedCompanyId] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(selectedCompanyId!) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.heartbeats(selectedCompanyId!) });
+    },
   });
 
   const inviteMutation = useMutation({
@@ -304,6 +319,36 @@ export function CompanySettings() {
             checked={!!selectedCompany.requireBoardApprovalForNewAgents}
             onChange={(v) => settingsMutation.mutate(v)}
           />
+        </div>
+      </div>
+
+      {/* Heartbeat Mode */}
+      <div className="space-y-4">
+        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+          Agent Heartbeats
+        </div>
+        <div className="rounded-md border border-border px-4 py-3 space-y-2">
+          <ToggleField
+            label="Enable scheduled heartbeats for all agents"
+            hint="Turns the heartbeat timer on/off across all company agents. Assignment wakeups remain allowed."
+            checked={heartbeatMode?.mode === "enabled"}
+            onChange={(v) => heartbeatModeMutation.mutate(v)}
+          />
+          {heartbeatMode?.mode === "mixed" && (
+            <p className="text-xs text-muted-foreground">
+              Mixed state detected ({heartbeatMode.enabledAgents}/{heartbeatMode.totalAgents} enabled). Toggle to apply one mode to all agents.
+            </p>
+          )}
+          {heartbeatModeMutation.isPending && (
+            <p className="text-xs text-muted-foreground">Updating heartbeat mode...</p>
+          )}
+          {heartbeatModeMutation.isError && (
+            <p className="text-xs text-destructive">
+              {heartbeatModeMutation.error instanceof Error
+                ? heartbeatModeMutation.error.message
+                : "Failed to update heartbeat mode"}
+            </p>
+          )}
         </div>
       </div>
 
